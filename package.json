@@ -1,0 +1,28 @@
+{
+  "name": "brewit",
+  "version": "0.1.0",
+  "main": "index.js",
+  "scripts": {
+  "dev": "tsup src/index.ts --watch",
+  "build": "tsup",
+  "test": "vitest",
+  "lint": "eslint . --ext .ts",
+  "format": "prettier --write ."
+},
+"exports": {
+  ".": "./dist/index.js",
+  "./accounts": "./dist/accounts/index.js",
+  "./delegation": "./dist/delegation/index.js",
+  "./automation": "./dist/automation/index.js"
+},  
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "description": "",
+  "devDependencies": {
+    "eslint": "^9.26.0",
+    "prettier": "^3.5.3",
+    "tsup": "^8.4.0",
+    "typescript": "^5.8.3"
+  }
+}
