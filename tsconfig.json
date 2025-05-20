@@ -1,17 +1,22 @@
 {
   "compilerOptions": {
-    "target": "ES2020",
-    "module": "ESNext",
-    "moduleResolution": "Bundler",
-    "lib": ["ES2020", "DOM"],
-    "outDir": "./dist",
+    "target": "es2020",
+    "module": "esnext",
+    "lib": ["es2020"],
+    "moduleResolution": "bundler",
+    "outDir": "dist",
+    "strict": true,
     "declaration": true,
     "declarationMap": true,
     "sourceMap": true,
-    "strict": true,
-    "esModuleInterop": true,
     "skipLibCheck": true,
-    "types": ["vitest/globals"],
+    "esModuleInterop": true,
+    "resolveJsonModule": true,
+    "isolatedModules": true,
+    "forceConsistentCasingInFileNames": true,
+    "incremental": false,
+    "composite": false
   },
-  "include": ["src", "tests"]
+  "include": ["src"],
+  "exclude": ["node_modules", "dist"]
 }
