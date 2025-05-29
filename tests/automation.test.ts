@@ -1,3 +1,4 @@
+import { test, expect } from 'vitest'
 import { setupAutomation } from '../src/automation'
 
 test('setupAutomation initializes a rule correctly', () => {

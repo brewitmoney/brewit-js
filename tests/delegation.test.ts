@@ -1,3 +1,5 @@
+import { expect } from 'vitest'
+import { test } from 'vitest'
 import { createDelegatedAccount } from '../src/delegation'
 
 test('createDelegatedAccount returns delegate with proper format', () => {
