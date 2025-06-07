@@ -57,6 +57,7 @@ export type BaseAccountParams = {
   signer: any;
   safeAddress?: Hex;
   type?: AccountType;
+  useValidator?: boolean;
 };
 
 export type MainAccountConfig = {

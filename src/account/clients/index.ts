@@ -3,8 +3,8 @@ import { SmartAccount } from "viem/account-abstraction";
 import { SmartAccountClient } from "permissionless";
 
 
-export const createAccountClient = (account: SmartAccount, bundlerEndpoint: string): SmartAccountClient => {
+export const createAccountClient = (account: SmartAccount, bundlerEndpoint: string, usePaymaster: boolean = true): SmartAccountClient => {
 
-    const client = getSmartAccountClient(account, bundlerEndpoint);
+    const client = getSmartAccountClient(account, bundlerEndpoint, usePaymaster);
     return client;
 }
