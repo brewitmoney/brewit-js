@@ -18,6 +18,7 @@ export const getPimlicoClient = (bundlerEndpoint: string): PimlicoClient => {
 export const getSmartAccountClient =  (
   account: SmartAccount,
   bundlerEndpoint: string,
+  usePaymaster: boolean = true
 ):  SmartAccountClient => {
 
 
@@ -25,7 +26,7 @@ export const getSmartAccountClient =  (
   const smartAccountClient = createSmartAccountClient({
     account: account,
     bundlerTransport: http(bundlerEndpoint),
-    paymaster: pimlicoClient,
+    paymaster: usePaymaster ? pimlicoClient : undefined,
     userOperation: {
       estimateFeesPerGas: async () =>
         (await pimlicoClient.getUserOperationGasPrice()).fast,
