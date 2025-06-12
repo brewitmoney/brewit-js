@@ -24,7 +24,7 @@ bun install brewit
 ```ts
 import { toAccount } from 'brewit';
 
-const account = await toAccount({
+const mainAccount = await toAccount({
   chainId: 8453,
   rpcEndpoint: 'https://mainnet.base.org',
   signer: privateKeyToAccount('0x...'),
@@ -36,6 +36,48 @@ const account = await toAccount({
 ### Create a delegated account
 
 ```ts
+import { toAccount } from 'brewit';
+import { createDelegatedAccount } from 'brewit/delegation';
+
+
+// Define the validator and policy for the delegated account
+const validator = {
+  address: '0xValidatorAddress', // Validator contract address
+  initData: '0x...',             // Validator initialization data
+  salt: '0x...',                 // Unique salt for the delegated account
+};
+
+const policyParams = {
+  policy: 'spendlimit', // or 'sudo'
+  tokenLimits: [{ token: '0xTokenAddress', amount: 1000000000000000000n }],
+};
+
+const txs = await createDelegatedAccount(mainAccount, validator, policyParams);
+// Send these transactions using your preferred method
+```
+
+
+### Get delegated account details
+
+```ts
+import { getDelegatedAccount } from 'brewit/delegation';
+
+// Fetch delegated account info
+const delegatedInfo = await getDelegatedAccount(
+  publicClient, // viem PublicClient instance
+  tokens,       // Array of tokens to check
+  mainAccount.address,
+  validator,
+  'spendlimit'  // or 'sudo'
+);
+
+```
+
+
+### Use a delegated account
+
+
+```ts
 import { toAccount } from 'brewit/account';
 
 const account = await toAccount({
@@ -45,6 +87,33 @@ const account = await toAccount({
   type: 'delegated',
   config: { validator: 'ownable', validatorInitData: '0x...', salt: '0x...' },
 });
+```
+
+
+
+
+### Update a delegated account
+
+```ts
+import { updateDelegatedAccount } from 'brewit/delegation';
+
+// Update the policy or validator for the delegated account
+const updatedPolicyParams = {
+  policy: 'spendlimit',
+  tokenLimits: [{ token: '0xTokenAddress', amount: 2000000000000000000n }],
+};
+
+const updateTxs = await updateDelegatedAccount(mainAccount, updatedPolicyParams, validator);
+// Send these transactions using your preferred method
+```
+
+### Remove a delegated account
+
+```ts
+import { removeDelegatedAccount } from 'brewit/delegation';
+
+const removeTxs = await removeDelegatedAccount(mainAccount, validator);
+// Send these transactions using your preferred method
 ```
 
 
