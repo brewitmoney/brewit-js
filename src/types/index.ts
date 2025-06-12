@@ -123,3 +123,31 @@ export interface UserInfo {
   avatar: string;
   bio?: string;
 }
+
+export interface BasePolicyParams {
+  policy: PolicyType;
+}
+
+export interface SpendLimitTokenLimit {
+  token: Address;
+  amount: bigint;
+}
+
+export interface SpendLimitParams extends BasePolicyParams {
+  policy: 'spendlimit';
+  tokenLimits: SpendLimitTokenLimit[];
+}
+
+export interface SudoTokenAccess {
+  token: Address;
+  isTransferEnabled: boolean;
+  isSwapEnabled: boolean;
+}
+
+export interface SudoParams extends BasePolicyParams {
+  policy: 'sudo';
+  tokenAccess: SudoTokenAccess[];
+}
+
+
+export type PolicyParams = SpendLimitParams | SudoParams;

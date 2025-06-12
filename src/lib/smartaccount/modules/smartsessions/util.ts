@@ -1,52 +1,51 @@
 import {
   Address,
+  Client,
   erc20Abi,
   formatUnits,
   Hex,
+  PublicClient,
   toFunctionSelector,
   zeroAddress,
+  Abi,
 } from 'viem';
 import { computeConfigId, getActionId } from './smartsessions';
 import { installSmartSessionsAbi, abi as smartSessionsAbi } from './abi';
 import { buildUseSmartSession } from '.';
 import SpendingLimitPolicy from '../abis/SpendingLimitPolicy.json';
 import { getModuleByChainId } from '../address';
-import { SMART_SESSIONS_ADDRESS } from '../../../../constants';
+import { SMART_SESSIONS_ADDRESS, SPEND_LIMIT_POLICY_ADDRESS } from '../../../../constants';
 import { Token } from '../../../../types';
 import { Subaccount } from '../../../../types';
 import { getSessionValidator } from '../../auth';
 import { getPublicClient } from '../../../../utils/network';
 
-
 const getSpendPolicy = async (
-  chainId: number,
+  client: PublicClient,
   configId: string,
   account: Address,
   token: Address
 ): Promise<any> => {
-  const { spendLimitPolicy, smartSession } = getModuleByChainId(chainId);
-  const client = await getPublicClient(chainId);
-
   const spendPolicy = await client.readContract({
-    address: spendLimitPolicy as Hex,
+    address: SPEND_LIMIT_POLICY_ADDRESS,
     abi: SpendingLimitPolicy.abi,
     functionName: 'getPolicyData',
-    args: [configId, smartSession, token, account],
+    args: [configId, SMART_SESSIONS_ADDRESS, token, account],
   });
 
   return spendPolicy;
 };
-
 export async function getSpendableTokenInfo(
-  chainId: number,
+  client: PublicClient,
   tokenAddress: Hex,
   account: Hex,
   validator: { address: Address; initData: Hex; salt?: Hex }
 ) {
   // Ethereum provider (you can use Infura or any other provider)
 
-  const client = getPublicClient(chainId);
-
+  if (!client.chain) {
+    throw new Error('Chain not found');
+  }
   // Get token balance
   const [balance, decimals] = await Promise.all([
     client.readContract({
@@ -77,9 +76,9 @@ export async function getSpendableTokenInfo(
     selector: execCallSelector,
   });
 
-  const smartSession = await buildUseSmartSession(chainId, validator);
+  const smartSession = await buildUseSmartSession(client.chain.id, validator);
   const spendPolicy = await getSpendPolicy(
-    chainId,
+    client,
     computeConfigId(smartSession.permissionId, actionId, account),
     account,
     tokenAddress
@@ -94,14 +93,21 @@ export async function getSpendableTokenInfo(
   };
 }
 
-export async function getSpendableTokensInfo(
-  chainId: number,
-  tokens: any[],
+// Previous implementation: getSpendableTokensInfo
+export async function getSpendLimitTokensInfo(
+  client: PublicClient,
+  tokens: Token[],
   account: Hex,
   validator: { address: Address; initData: Hex; salt?: Hex }
-) {
-  const client = getPublicClient(chainId);
-
+): Promise<{
+  address: Address;
+  limit: string;
+  spent: string;
+  balance: bigint;
+}[]> {
+  if (!client.chain) {
+    throw new Error('Chain not found');
+  }
   const execCallSelector = toFunctionSelector({
     name: 'transfer',
     type: 'function',
@@ -113,23 +119,24 @@ export async function getSpendableTokensInfo(
     stateMutability: 'view',
   });
 
-  const useSmartSession = await buildUseSmartSession(chainId, validator);
-
-  const { spendLimitPolicy, smartSession } = getModuleByChainId(chainId);
+  const useSmartSession = await buildUseSmartSession(
+    client.chain.id,
+    validator
+  );
 
   const spendPolicy = await client.multicall({
-    contracts: tokens.map((token: any) => {
+    contracts: tokens.map((token: Token) => {
       const actionId = getActionId({
         target: token.address,
         selector: execCallSelector,
       });
       return {
-        address: spendLimitPolicy as Hex,
-        abi: SpendingLimitPolicy.abi,
+        address: SPEND_LIMIT_POLICY_ADDRESS as Address,
+        abi: SpendingLimitPolicy.abi as Abi,
         functionName: 'getPolicyData',
         args: [
           computeConfigId(useSmartSession.permissionId, actionId, account),
-          smartSession,
+          SMART_SESSIONS_ADDRESS,
           token.address,
           account,
         ],
@@ -139,7 +146,7 @@ export async function getSpendableTokensInfo(
   });
 
   const policiesEnabled = await checkPolicyEnabled(
-    chainId,
+    client,
     tokens,
     account,
     validator
@@ -155,13 +162,15 @@ export async function getSpendableTokensInfo(
       !policiesEnabled[idx].isSudoEnabled
     ) {
       return {
+        address: tokens[idx].address,
         limit: '0',
         spent: '0',
-        balance: '0',
+        balance: BigInt(0),
       };
     }
 
     return {
+      address: tokens[idx].address,
       limit: formatUnits(policy.result[0], tokens[idx].decimals),
       spent: formatUnits(policy.result[1], tokens[idx].decimals),
       balance: BigInt(policy.result[0] - policy.result[1]),
@@ -172,15 +181,18 @@ export async function getSpendableTokensInfo(
 }
 
 export async function checkPolicyEnabled(
-  chainId: number,
-  tokens: any[],
+  client: PublicClient,
+  tokens: Token[],
   account: Hex,
   validator: { address: Address; initData: Hex; salt?: Hex }
 ) {
-  const client = getPublicClient(chainId);
-
-  const useSmartSession = await buildUseSmartSession(chainId, validator);
-  const { spendLimitPolicy } = getModuleByChainId(chainId);
+  if (!client.chain) {
+    throw new Error('Chain not found');
+  }
+  const useSmartSession = await buildUseSmartSession(
+    client.chain.id,
+    validator
+  );
 
   const transferSelector = toFunctionSelector({
     name: 'transfer',
@@ -194,7 +206,7 @@ export async function checkPolicyEnabled(
   });
 
   const isSudoEnabled = await client.multicall({
-    contracts: tokens.map((token: any) => {
+    contracts: tokens.map((token: Token) => {
       const actionId = getActionId({
         target: token.address,
         selector: transferSelector,
@@ -208,7 +220,7 @@ export async function checkPolicyEnabled(
           account,
           useSmartSession.permissionId,
           actionId,
-          spendLimitPolicy,
+          SPEND_LIMIT_POLICY_ADDRESS,
         ],
       };
     }),
@@ -231,15 +243,26 @@ export async function checkPolicyEnabled(
   return parsedIsSudoEnabled;
 }
 
-export async function checkSudoActions(
-  chainId: number,
-  tokens: any[],
+// Previous implementation: checkSudoActions
+export async function getSudoAccessTokensInfo(
+  client: PublicClient,
+  tokens: Token[],
   account: Hex,
   validator: { address: Address; initData: Hex; salt?: Hex }
-) {
-  const client = getPublicClient(chainId);
-
-  const useSmartSession = await buildUseSmartSession(chainId, validator);
+): Promise<{
+  address: Address;
+  permissions: {
+    swap: boolean;
+    spend: boolean;
+  };
+}[]> {
+  if (!client.chain) {
+    throw new Error('Chain not found');
+  }
+  const useSmartSession = await buildUseSmartSession(
+    client.chain.id,
+    validator
+  );
 
   const approveSelector = toFunctionSelector({
     name: 'approve',
@@ -264,7 +287,7 @@ export async function checkSudoActions(
   });
 
   const enabledActions = await client.multicall({
-    contracts: tokens.map((token: any) => {
+    contracts: tokens.map((token: Token) => {
       const actionId = getActionId({
         target: token.address,
         selector: approveSelector,
@@ -284,10 +307,10 @@ export async function checkSudoActions(
     (result: any, idx: number) => {
       if (result.status === 'failure' || !result.result) {
         return {
-          address: tokens[idx].address,
-          enabledActions: {
+          address: tokens[idx].address as Address,
+          permissions: {
             swap: false,
-            transfer: false,
+            spend: false,
           },
         };
       }
@@ -300,7 +323,7 @@ export async function checkSudoActions(
         selector: transferSelector,
       });
       return {
-        address: tokens[idx].address,
+        address: tokens[idx].address as Address,
         permissions: {
           swap: result.result.includes(approveActionId),
           spend: result.result.includes(transferActionId),
@@ -312,9 +335,11 @@ export async function checkSudoActions(
   return parsedEnabledActions;
 }
 
-export async function getSpendableTokensList(
-  chainId: number,
-  accountTokens: any[],
+
+// Previous implementation: getSpendableTokensList
+export async function getDelegatedTokensList(
+  client: PublicClient,
+  accountTokens: Token[],
   subAccountInfo: Subaccount,
   account: Address
 ) {
@@ -327,8 +352,8 @@ export async function getSpendableTokensList(
   if (subAccountInfo?.policy === 'spendlimit') {
     const sessionValidator = getSessionValidator(subAccountInfo);
 
-    subAccountTokensBalance = await getSpendableTokensInfo(
-      chainId,
+    subAccountTokensBalance = await getSpendLimitTokensInfo(
+      client,
       subAccountTokens,
       account,
       sessionValidator
@@ -356,8 +381,8 @@ export async function getSpendableTokensList(
   let sudoActions: any;
   if (subAccountInfo?.policy === 'sudo') {
     const sessionValidator = getSessionValidator(subAccountInfo);
-    sudoActions = await checkSudoActions(
-      chainId,
+    sudoActions = await getSudoAccessTokensInfo(
+      client,
       subAccountTokens,
       account,
       sessionValidator

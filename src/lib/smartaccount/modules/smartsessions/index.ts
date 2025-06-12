@@ -27,10 +27,10 @@ import {
   getPermissionId,
   Session,
 } from '@rhinestone/module-sdk';
-import { OWNABLE_VALIDATOR_ADDRESS } from '../../../../constants';
+import { OWNABLE_VALIDATOR_ADDRESS, SMART_SESSIONS_ADDRESS, SPEND_LIMIT_POLICY_ADDRESS } from '../../../../constants';
 import { privateKeyToAccount } from 'viem/accounts';
-import { getModuleByChainId } from '../address';
-import { Transaction } from '../../../../types';
+import { PolicyParams, Transaction } from '../../../../types';
+import { SmartAccount } from 'viem/account-abstraction';
 
 export const getSessionValidatorAccount = (
   sessionPKey: Hex
@@ -50,26 +50,19 @@ export function getSessionValidatorDetails(validatorAccount: Hex) {
 }
 
 export const buildInstallSmartSessionModule = async (
-  chainId: number,
-  safeAccount: Address,
-  client: PublicClient
+  account: SmartAccount
 ): Promise<Transaction | null> => {
-  const { smartSession } = getModuleByChainId(chainId);
 
   const isModuleInstalled = await isInstalled(
-    chainId,
-    client,
-    safeAccount,
-    smartSession,
+    account,
+    SMART_SESSIONS_ADDRESS,
     'validator'
   );
 
   if (!isModuleInstalled) {
     return await buildInstallModule(
-      chainId,
-      client,
-      safeAccount,
-      smartSession,
+      account,
+      SMART_SESSIONS_ADDRESS,
       'validator',
       '0x'
     );
@@ -113,28 +106,15 @@ export const buildUseSmartSession = async (
   return sessionDetails;
 };
 
-type SpendLimitParams = {
-  policy: 'spendlimit';
-  tokenLimits: { token: Address; amount: bigint }[];
-  tokenAccess?: never;
-};
 
-type SudoParams = {
-  policy: 'sudo';
-  tokenAccess: {
-    address: Address;
-    isTransferEnabled: boolean;
-    isSwapEnabled: boolean;
-  }[];
-  tokenLimits?: never;
-};
+
+
 
 export const buildEnableSmartSession = async (
   chainId: number,
-  policyParams: SpendLimitParams | SudoParams,
+  policyParams: PolicyParams,
   validator: { address: Address; initData: Hex; salt?: Hex }
 ): Promise<Transaction> => {
-  const { spendLimitPolicy } = getModuleByChainId(chainId);
 
   let actions: ActionData[] = [];
   const transferSelector = toFunctionSelector({
@@ -162,7 +142,7 @@ export const buildEnableSmartSession = async (
           actionTargetSelector: transferSelector, // function selector to be used in the execution
           actionPolicies: [
             {
-              policy: spendLimitPolicy,
+              policy: SPEND_LIMIT_POLICY_ADDRESS,
               initData: spendingLimitsPolicy.initData,
             },
           ],
@@ -181,40 +161,50 @@ export const buildEnableSmartSession = async (
       stateMutability: 'view',
     });
 
-    const allowanceSelector = toFunctionSelector({
-      name: 'exec',
-      type: 'function',
-      inputs: [
-        { name: 'operator', type: 'address' },
-        { name: 'token', type: 'address' },
-        { name: 'amount', type: 'uint256' },
-        { name: 'target', type: 'address' },
-        { name: 'data', type: 'bytes' },
-      ],
-      outputs: [{ type: 'bytes', name: 'result' }],
-      stateMutability: 'payable',
-    });
+    // TODO: older 0x allowance selector
+    // const allowanceSelector = toFunctionSelector({
+    //   name: 'exec',
+    //   type: 'function',
+    //   inputs: [
+    //     { name: 'operator', type: 'address' },
+    //     { name: 'token', type: 'address' },
+    //     { name: 'amount', type: 'uint256' },
+    //     { name: 'target', type: 'address' },
+    //     { name: 'data', type: 'bytes' },
+    //   ],
+    //   outputs: [{ type: 'bytes', name: 'result' }],
+    //   stateMutability: 'payable',
+    // });
 
-    actions = [
-      {
-        actionTarget: '0x0000000000001ff3684f28c67538d4d072c22734',
-        actionTargetSelector: allowanceSelector,
-        actionPolicies: [getSudoPolicy()],
-      },
+    const LiFiDiamondContract: Address =
+      '0x1231DEB6f5749EF6cE6943a275A1D3E7486F4EaE';
+    const lifiSwapSelectors: Hex[] = [
+      '0x5fd9ae2e', // swapTokensMultipleV3ERC20ToERC20
+      '0x2c57e884', // swapTokensMultipleV3ERC20ToNative
+      '0x736eac0b', // swapTokensMultipleV3NativeToERC20
+      '0x4666fc80', // swapTokensSingleV3ERC20ToERC20
+      '0x733214a3', // swapTokensSingleV3ERC20ToNative
+      '0xaf7060fd', // swapTokensSingleV3NativeToERC20
     ];
+
+    actions = lifiSwapSelectors.map((selector) => ({
+      actionTarget: LiFiDiamondContract,
+      actionTargetSelector: selector,
+      actionPolicies: [getSudoPolicy()],
+    }));
 
     const tokenActions = policyParams.tokenAccess.map((tokenAccess) => {
       const tokenActions = [];
       if (tokenAccess.isSwapEnabled) {
         tokenActions.push({
-          actionTarget: tokenAccess.address,
+          actionTarget: tokenAccess.token,
           actionTargetSelector: approveSelector,
           actionPolicies: [getSudoPolicy()],
         });
       }
       if (tokenAccess.isTransferEnabled) {
         tokenActions.push({
-          actionTarget: tokenAccess.address,
+          actionTarget: tokenAccess.token,
           actionTargetSelector: transferSelector,
           actionPolicies: [getSudoPolicy()],
         });
@@ -280,26 +270,13 @@ export const buildRemoveSession = async (
   };
 };
 
-type UpdateActionParams = {
-  type: 'spendlimit' | 'sudo';
-  updates: {
-    address: Address;
-    spendlimit?: {
-      limit: number;
-    };
-    permissions?: {
-      swap?: boolean;
-      spend?: boolean;
-    };
-  }[];
-};
+
 
 export const buildDisableActionPolicies = async (
   chainId: number,
-  disableActionParams: UpdateActionParams,
+  disableActionParams: PolicyParams,
   validator: { address: Address; initData: Hex; salt?: Hex }
 ): Promise<Transaction[]> => {
-  const { spendLimitPolicy } = getModuleByChainId(chainId);
 
   const session: Session = {
     sessionValidator: validator.address,
@@ -338,19 +315,19 @@ export const buildDisableActionPolicies = async (
   });
 
   let actions: Transaction[] = [];
-  if (disableActionParams.type === 'spendlimit') {
+  if (disableActionParams.policy === 'spendlimit') {
     actions = await Promise.all(
-      disableActionParams.updates
-        .filter((update) => update.spendlimit?.limit == 0)
+      disableActionParams.tokenLimits
+        .filter((update) => update.amount == BigInt(0))
         .map(async (update) => {
           const actionId = await getActionId({
-            target: update.address,
+            target: update.token,
             selector: transferSelector,
           });
           const action = getDisableActionPoliciesAction({
             permissionId: getPermissionId({ session }),
             actionId: actionId,
-            policies: [spendLimitPolicy],
+            policies: [SPEND_LIMIT_POLICY_ADDRESS],
           });
 
           return {
@@ -360,21 +337,20 @@ export const buildDisableActionPolicies = async (
           };
         })
     );
-  } else if (disableActionParams.type === 'sudo') {
+  } else if (disableActionParams.policy === 'sudo') {
     actions = await Promise.all(
-      disableActionParams.updates
+      disableActionParams.tokenAccess
         .filter(
           (update) =>
-            update.permissions?.spend === false ||
-            update.permissions?.swap === false
+            update.isTransferEnabled === false || update.isSwapEnabled === false
         )
         .map(async (update) => {
           const removeActions = [];
-          if (update.permissions?.spend === false) {
+          if (update.isTransferEnabled === false) {
             const action = getDisableActionPoliciesAction({
               permissionId: getPermissionId({ session }),
               actionId: await getActionId({
-                target: update.address,
+                target: update.token,
                 selector: transferSelector,
               }),
               policies: [getSudoPolicy().policy],
@@ -385,11 +361,11 @@ export const buildDisableActionPolicies = async (
               data: action.data,
             });
           }
-          if (update.permissions?.swap === false) {
+          if (update.isSwapEnabled === false) {
             const action = getDisableActionPoliciesAction({
               permissionId: getPermissionId({ session }),
               actionId: await getActionId({
-                target: update.address,
+                target: update.token,
                 selector: approveSelector,
               }),
               policies: [getSudoPolicy().policy],
@@ -411,10 +387,9 @@ export const buildDisableActionPolicies = async (
 
 export const buildEnableActionPolicies = async (
   chainId: number,
-  enableActionParams: UpdateActionParams,
+  enableActionParams: PolicyParams,
   validator: { address: Address; initData: Hex; salt?: Hex }
 ): Promise<Transaction[]> => {
-  const { spendLimitPolicy } = getModuleByChainId(chainId);
 
   const session: Session = {
     sessionValidator: validator.address,
@@ -453,17 +428,15 @@ export const buildEnableActionPolicies = async (
   });
 
   let actions: Transaction[] = [];
-  if (enableActionParams.type === 'spendlimit') {
+  if (enableActionParams.policy === 'spendlimit') {
     actions = await Promise.all(
-      enableActionParams.updates
-        .filter(
-          (update) => update.spendlimit?.limit && update.spendlimit.limit > 0
-        )
+      enableActionParams.tokenLimits
+        .filter((update) => update.amount && update.amount > BigInt(0))
         .map(async (update) => {
           const spendingLimitsPolicy = getSpendingLimitsPolicy([
             {
-              token: update.address,
-              limit: BigInt(update.spendlimit!.limit),
+              token: update.token,
+              limit: update.amount,
             },
           ]);
 
@@ -471,11 +444,11 @@ export const buildEnableActionPolicies = async (
             permissionId: getPermissionId({ session }),
             actionPolicies: [
               {
-                actionTarget: update.address,
+                actionTarget: update.token,
                 actionTargetSelector: transferSelector,
                 actionPolicies: [
                   {
-                    policy: spendLimitPolicy,
+                    policy: SPEND_LIMIT_POLICY_ADDRESS,
                     initData: spendingLimitsPolicy.initData,
                   },
                 ],
@@ -490,21 +463,21 @@ export const buildEnableActionPolicies = async (
           };
         })
     );
-  } else if (enableActionParams.type === 'sudo') {
+  } else if (enableActionParams.policy === 'sudo') {
     const actionPolicies = [];
 
-    for (const update of enableActionParams.updates) {
-      if (update.permissions?.spend === true) {
+    for (const update of enableActionParams.tokenAccess) {
+      if (update.isTransferEnabled === true) {
         actionPolicies.push({
-          actionTarget: update.address,
+          actionTarget: update.token,
           actionTargetSelector: transferSelector,
           actionPolicies: [getSudoPolicy()],
         });
       }
 
-      if (update.permissions?.swap === true) {
+      if (update.isSwapEnabled === true) {
         actionPolicies.push({
-          actionTarget: update.address,
+          actionTarget: update.token,
           actionTargetSelector: approveSelector,
           actionPolicies: [getSudoPolicy()],
         });
@@ -527,3 +500,4 @@ export const buildEnableActionPolicies = async (
 
   return actions;
 };
+

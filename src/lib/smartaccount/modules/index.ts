@@ -4,6 +4,7 @@ import { getAccount, getClient, ModuleType } from "@rhinestone/module-sdk";
 import { Address, encodeAbiParameters, encodeFunctionData, getAddress, Hex, PublicClient } from "viem";
 import { Transaction } from "../../../types";
 import {SMART_SESSIONS_ADDRESS } from "../../../constants";
+import { SmartAccount } from "viem/account-abstraction";
 
 
 function parseModuleTypeId(type: ModuleType): bigint {
@@ -22,21 +23,21 @@ function parseModuleTypeId(type: ModuleType): bigint {
   }
 
 
-export const buildInstallModule = async (
-    chainId: number,
-    client: PublicClient,
-    safeAddress: Address,
+
+  export const buildInstallModule = async (
+    account: SmartAccount,
     address: Address,
     type: ModuleType,
     initData: Hex
   ): Promise<Transaction> => {
-    // const client = getClient({
-    //   rpcUrl: NetworkUtil.getNetworkByChainId(chainId)?.url!,
-    // });
+    const client = getClient({
+      rpcUrl: account.client.transport.url,
+    });
+    
   
     // Create the account object
-    const account = getAccount({
-      address: safeAddress, 
+    const safeAccount = getAccount({
+      address: account.address,
       type: 'safe',
     });
   
@@ -47,8 +48,8 @@ export const buildInstallModule = async (
     });
   
     const executions = await installModule({
-      client,
-      account,
+      client: client,
+      account: safeAccount,
       module: accountModule,
     });
   
@@ -60,17 +61,16 @@ export const buildInstallModule = async (
   };
   
   export const buildUninstallModule = async (
-    chainId: number,
-    client: PublicClient,
-    safeAddress: Address,
+    account: SmartAccount,
     address: Address,
-    type: ModuleType
+    type: ModuleType,
+    previousModule: Address
   ): Promise<Transaction> => {
+
+
     const isSmartSession = await isInstalled(
-      chainId,
-      client,
-      safeAddress,
-      SMART_SESSIONS_ADDRESS,
+      account,
+      previousModule,
       'validator'
     );
   
@@ -82,7 +82,7 @@ export const buildInstallModule = async (
           type: 'bytes',
         },
       ],
-      [isSmartSession ? SMART_SESSIONS_ADDRESS : SENTINEL_ADDRESS, '0x']
+      [isSmartSession ? previousModule : SENTINEL_ADDRESS, '0x']
     );
   
     const encodeUninstallModule = encodeFunctionData({
@@ -116,26 +116,25 @@ export const buildInstallModule = async (
     });
   
     return {
-      to: safeAddress,
+      to: account.address,
       value: BigInt(0),
       data: encodeUninstallModule,
     };
   };
   
   export const isInstalled = async (
-    chainId: number,
-    client: PublicClient,
-    safeAddress: Address,
+    account: SmartAccount,
     address: Address,
     type: ModuleType
   ): Promise<boolean> => {
-    // const client = getClient({
-    //   rpcUrl: NetworkUtil.getNetworkByChainId(chainId)?.url!,
-    // });
-  
+
+      const client = getClient({
+        rpcUrl: account.client.transport.url,
+      });
+    
     // Create the account object
-    const account = getAccount({
-      address: safeAddress,
+    const safeAccount = getAccount({
+      address: account.address,
       type: 'safe',
     });
   
@@ -148,7 +147,7 @@ export const buildInstallModule = async (
     try {
       return await isModuleInstalled({
         client,
-        account,
+        account: safeAccount,
         module: accountModule,
       });
     } catch {
